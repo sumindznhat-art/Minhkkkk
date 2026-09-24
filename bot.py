@@ -1,4 +1,8 @@
 # -*- coding: utf-8 -*-
+# ============================================================
+#   LE HOANG MINH TOOL - DETERMINISTIC EDITION
+#   Fix conflict + Đổi thương hiệu
+# ============================================================
 import os
 import re
 import sys
@@ -21,15 +25,21 @@ from telegram.ext import (
     CallbackQueryHandler, filters, ContextTypes,
 )
 
+# ============================================================
+#   CẤU HÌNH - ĐỔI THƯƠNG HIỆU
+# ============================================================
 BOT_TOKEN = "8934734495:AAGVXUK0muIIPK2XYJhzxwHJoaZNbysc-UY"
 ADMIN_IDS = [8852639183]
 ADMIN_PHONE = "0372834763"
 BANK_NAME = "MBBANK"
 BANK_ACC = "0372834763"
-BANK_OWNER = "LE MINH"
+BANK_OWNER = "LE HOANG MINH"        # ✅ ĐÃ ĐỔI
 
-SECRET_TOKEN = "LEMINH_TOOL_VIP_V15_KEY"
-SECRET_SALT = "LM15X9K8M7N6P5Q4W3E2R1Z0"
+BRAND_NAME = "LE HOANG MINH"         # ✅ TÊN THƯƠNG HIỆU MỚI
+BRAND_SHORT = "LHM"
+
+SECRET_TOKEN = "LEHOANGMINH_VIP_V15_KEY"
+SECRET_SALT = "LHM15X9K8M7N6P5Q4W3E2R1"
 
 DATA_DIR = "/data"
 if not os.path.exists(DATA_DIR):
@@ -70,6 +80,9 @@ RATE_LIMIT_MAX = 5
 _rate_bucket = {}
 
 
+# ============================================================
+#   DATABASE
+# ============================================================
 def load_db(path):
     try:
         if not os.path.exists(path):
@@ -94,6 +107,9 @@ def save_db(path, data):
         logger.error("Save DB " + path + ": " + str(e))
 
 
+# ============================================================
+#   MD5 CUSTOM
+# ============================================================
 def left_rotate(x, amount):
     x &= MASK32
     return ((x << amount) | (x >> (32 - amount))) & MASK32
@@ -188,6 +204,9 @@ def isqrt(n):
     return x
 
 
+# ============================================================
+#   8 ENGINES
+# ============================================================
 def engine_hash_cascade(data, weight):
     state = data
     acc = 0
@@ -520,7 +539,7 @@ def esc(t):
 
 
 def gen_key():
-    return "LM-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=13))
+    return BRAND_SHORT + "-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=13))
 
 
 def create_key(key_type, created_by=None):
@@ -661,6 +680,9 @@ def rate_limit_ok(user_id):
     return True
 
 
+# ============================================================
+#   MESSAGES
+# ============================================================
 async def send_locked_message(update_or_msg):
     text = (
         "🔒 <b>KEY DA HET HAN</b>\n" + LINE + "\n\n"
@@ -717,6 +739,9 @@ async def send_no_key_message(update_or_msg):
     await update_or_msg.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
+# ============================================================
+#   USER HANDLERS
+# ============================================================
 async def start(update, ctx):
     user = update.effective_user
     if is_banned(user.id):
@@ -749,7 +774,7 @@ async def start(update, ctx):
     else:
         status = "❌ Chua kich hoat"
     text = (
-        "🎯 <b>HOANG MINH TOOL</b>\n"
+        "🎯 <b>" + BRAND_NAME + " TOOL</b>\n"
         "🔒 Deterministic Algorithm\n"
         + LINE + "\n\n"
         "📥 <b>Gui MD5 (32) / SHA-256 (64)</b>\n"
@@ -777,7 +802,7 @@ async def cmd_key(update, ctx):
             "📝 Cu phap:\n"
             "<code>/key MA_KEY</code>\n\n"
             "💡 Vi du:\n"
-            "<code>/key LM-ABCD1234XYZ</code>\n\n"
+            "<code>/key " + BRAND_SHORT + "-ABCD1234XYZ</code>\n\n"
             "📞 /nap de mua key"
         )
         await update.message.reply_text(text, parse_mode=ParseMode.HTML)
@@ -950,6 +975,9 @@ async def cmd_myid(update, ctx):
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
+# ============================================================
+#   HANDLE HASH
+# ============================================================
 async def handle_hash(update, ctx):
     user = update.effective_user
     text = update.message.text.strip()
@@ -1010,7 +1038,7 @@ async def handle_hash(update, ctx):
     votes_tai, votes_xiu = res["votes"]
     engines_str = " ".join(("🔴" if e >= 50 else "🔵") for e in res["engines"])
     msg = (
-        "🎯 <b>LEMINH VIP v15</b>\n"
+        "🎯 <b>" + BRAND_NAME + " TOOL</b>\n"
         + LINE + "\n"
         + "🔎 <code>" + esc(res["hash"]) + "</code>\n"
         + "🧩 " + res["type"] + "\n\n"
@@ -1027,6 +1055,9 @@ async def handle_hash(update, ctx):
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
 
 
+# ============================================================
+#   ADMIN HANDLERS
+# ============================================================
 async def cmd_admin(update, ctx):
     user = update.effective_user
     if not is_admin(user.id):
@@ -1046,7 +1077,7 @@ async def cmd_admin(update, ctx):
     unused_keys = total_keys - used_keys
     total_preds = stats.get("global_total", 0)
     text = (
-        "👑 <b>ADMIN PANEL v15</b>\n" + LINE + "\n"
+        "👑 <b>ADMIN PANEL - " + BRAND_NAME + "</b>\n" + LINE + "\n"
         "👥 Tong user: <b>" + str(total_users) + "</b>\n"
         "✅ VIP hoat dong: <b>" + str(active_users) + "</b>\n"
         "🔴 Da het han: <b>" + str(expired_users) + "</b>\n"
@@ -1432,7 +1463,7 @@ async def button_cb(update, ctx):
     elif q.data == "huongdan_key":
         await q.message.reply_text(
             "🔑 <code>/key MA_KEY</code>\n"
-            "Vi du: <code>/key LM-ABC123XYZ</code>",
+            "Vi du: <code>/key " + BRAND_SHORT + "-ABC123XYZ</code>",
             parse_mode=ParseMode.HTML,
         )
 
@@ -1461,7 +1492,7 @@ async def post_init(app):
     except Exception as e:
         logger.error("set_my_commands: " + str(e))
     logger.info("DATA_DIR: " + DATA_DIR)
-    logger.info("Bot v15 DETERMINISTIC started! (POLLING MODE)")
+    logger.info(BRAND_NAME + " TOOL started! (POLLING MODE)")
 
 
 def main():
