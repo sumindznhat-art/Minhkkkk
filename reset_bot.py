@@ -34,8 +34,8 @@ async def reset():
     # 3. Set mô tả dài (KHÔNG LINK)
     try:
         await bot.set_my_description(
-            "🎯 LE HOANG MINH TOOL - Dự đoán TÀI/XỈU\n\n"
-            "⚡ 12-Engine Deterministic AI\n"
+            "🎯 LE HOANG MINH TOOL \n\n"
+            "TOOL TX VIP MUA KEY HỖ TRỢ GÌ IB ZL MINH\n"
             "🔒 Cùng hash → cùng kết quả\n"
             "📥 Gửi MD5 (32 ký tự) hoặc SHA-256 (64 ký tự)\n\n"
             "🔑 Cần key VIP để sử dụng\n"
