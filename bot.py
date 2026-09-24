@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 # ============================================================
-#   LEMINH TOOL VIP v14 - ULTIMATE EDITION (FIXED)
-#   Multi-Engine Consensus + Full User Control
-#   Fixed: Python 3.11 + asyncio event loop
+#   LEMINH TOOL VIP v15 - DETERMINISTIC EDITION
+#   100% Non-Random Algorithm + Cache
+#   Cùng hash → Cùng kết quả, KHÔNG BAO GIỜ ĐỔI
 # ============================================================
 import os
 import re
+import sys
 import json
 import math
 import html
@@ -29,17 +30,14 @@ from telegram.ext import (
 #   CẤU HÌNH
 # ============================================================
 BOT_TOKEN = "8934734495:AAGVXUK0muIIPK2XYJhzxwHJoaZNbysc-UY"
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
-PORT = int(os.getenv("PORT", 10000))
-
 ADMIN_IDS = [8852639183]
 ADMIN_PHONE = "0372834763"
 BANK_NAME = "MBBANK"
 BANK_ACC = "0372834763"
 BANK_OWNER = "LE MINH"
 
-SECRET_TOKEN = "LEMINH_TOOL_VIP_V14_KEY"
-SECRET_SALT = "LM14X9K8M7N6P5Q4W3E2R1Z0"
+SECRET_TOKEN = "LEMINH_TOOL_VIP_V15_KEY"
+SECRET_SALT = "LM15X9K8M7N6P5Q4W3E2R1Z0"
 
 DATA_DIR = "/data"
 if not os.path.exists(DATA_DIR):
@@ -52,6 +50,7 @@ DB_FILE = os.path.join(DATA_DIR, "users_db.json")
 KEYS_FILE = os.path.join(DATA_DIR, "keys_db.json")
 STATS_FILE = os.path.join(DATA_DIR, "stats_db.json")
 BANS_FILE = os.path.join(DATA_DIR, "bans_db.json")
+CACHE_FILE = os.path.join(DATA_DIR, "predict_cache.json")
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -75,6 +74,9 @@ KEY_PRICING = {
 RATE_LIMIT_WINDOW = 10
 RATE_LIMIT_MAX = 5
 _rate_bucket = {}
+
+MASK32 = 0xFFFFFFFF
+MASK64 = 0xFFFFFFFFFFFFFFFF
 
 
 # ============================================================
@@ -108,17 +110,17 @@ def save_db(path, data):
 #   MD5 CUSTOM
 # ============================================================
 def left_rotate(x, amount):
-    x &= 0xFFFFFFFF
-    return ((x << amount) | (x >> (32 - amount))) & 0xFFFFFFFF
+    x &= MASK32
+    return ((x << amount) | (x >> (32 - amount))) & MASK32
 
 
 def md5_custom(message):
-    T = [int(4294967296 * abs(math.sin(i + 1))) & 0xFFFFFFFF for i in range(64)]
+    T = [int(4294967296 * abs(math.sin(i + 1))) & MASK32 for i in range(64)]
     s = (
         [7, 12, 17, 22] * 4 + [5, 9, 14, 20] * 4 +
         [4, 11, 16, 23] * 4 + [6, 10, 15, 21] * 4
     )
-    orig_len_in_bits = (len(message) * 8) & 0xFFFFFFFFFFFFFFFF
+    orig_len_in_bits = (len(message) * 8) & MASK64
     message += b'\x80'
     while (len(message) * 8) % 512 != 448:
         message += b'\x00'
@@ -141,21 +143,21 @@ def md5_custom(message):
             else:
                 f = c ^ (b | (~d))
                 g = (7 * i) % 16
-            f = (f + a + T[i] + M[g]) & 0xFFFFFFFF
+            f = (f + a + T[i] + M[g]) & MASK32
             a = d
             d = c
             c = b
-            b = (b + left_rotate(f, s[i])) & 0xFFFFFFFF
-        A = (A + a) & 0xFFFFFFFF
-        B = (B + b) & 0xFFFFFFFF
-        C = (C + c) & 0xFFFFFFFF
-        D = (D + d) & 0xFFFFFFFF
+            b = (b + left_rotate(f, s[i])) & MASK32
+        A = (A + a) & MASK32
+        B = (B + b) & MASK32
+        C = (C + c) & MASK32
+        D = (D + d) & MASK32
     return (A.to_bytes(4, 'little') + B.to_bytes(4, 'little') +
             C.to_bytes(4, 'little') + D.to_bytes(4, 'little')).hex()
 
 
 # ============================================================
-#   CÔNG CỤ TOÁN HỌC
+#   SỐ NGUYÊN TỐ + UTILS
 # ============================================================
 def prime_sieve(n):
     sieve = [True] * (n + 1)
@@ -167,38 +169,8 @@ def prime_sieve(n):
     return [i for i, p in enumerate(sieve) if p]
 
 
-PRIMES = prime_sieve(20000)[:2000]
-
-
-def fibonacci_mod(n, m=100):
-    a, b = 0, 1
-    for _ in range(n % 300):
-        a, b = b, (a + b) % m
-    return a
-
-
-def sigmoid(x):
-    try:
-        return 1 / (1 + math.exp(-x))
-    except OverflowError:
-        return 0.0 if x < 0 else 1.0
-
-
-def logistic_map(x, r=3.9999, iterations=8):
-    for _ in range(iterations):
-        x = r * x * (1 - x)
-        x = abs(x) - int(abs(x))
-    return x
-
-
-def henon_map(x, y, a=1.4, b=0.3, iterations=6):
-    for _ in range(iterations):
-        x_new = 1 - a * x * x + y
-        y = b * x
-        x = x_new
-        x = (x + 10) % 1.0
-        y = (y + 10) % 1.0
-    return x, y
+PRIMES = prime_sieve(50000)[:5000]
+N_PRIMES = len(PRIMES)
 
 
 def detect_hash_type(h):
@@ -210,35 +182,82 @@ def detect_hash_type(h):
     return None
 
 
+def rotr32(x, n):
+    x &= MASK32
+    return ((x >> n) | (x << (32 - n))) & MASK32
+
+
+def rotl64(x, n):
+    x &= MASK64
+    return ((x << n) | (x >> (64 - n))) & MASK64
+
+
+def mix64(x):
+    x &= MASK64
+    x ^= x >> 33
+    x = (x * 0xff51afd7ed558ccd) & MASK64
+    x ^= x >> 33
+    x = (x * 0xc4ceb9fe1a85ec53) & MASK64
+    x ^= x >> 33
+    return x
+
+
+def mix32(x):
+    x &= MASK32
+    x ^= x >> 16
+    x = (x * 0x85ebca6b) & MASK32
+    x ^= x >> 13
+    x = (x * 0xc2b2ae35) & MASK32
+    x ^= x >> 16
+    return x
+
+
+def isqrt(n):
+    if n < 0:
+        return 0
+    if n == 0:
+        return 0
+    x = n
+    y = (x + 1) // 2
+    while y < x:
+        x = y
+        y = (x + n // x) // 2
+    return x
+
+
 # ============================================================
-#   8 ENGINES
+#   8 ENGINES - 100% INTEGER, KHÔNG RANDOM
 # ============================================================
-def engine_hash_cascade(mixed_bytes, weight):
-    state = mixed_bytes
+
+# ENGINE 1: Hash cascade
+def engine_hash_cascade(data, weight):
+    state = data
     acc = 0
-    for i in range(160):
+    for i in range(200):
         r = i % 6
+        i_bytes = i.to_bytes(2, "big")
         if r == 0:
-            state = hashlib.sha512(state + str(i).encode()).digest()
+            state = hashlib.sha512(state + i_bytes).digest()
         elif r == 1:
-            state = hashlib.sha256(state + str(i).encode()).digest()
+            state = hashlib.sha256(state + i_bytes).digest()
         elif r == 2:
-            state = hashlib.blake2b(state + str(i).encode()).digest()
+            state = hashlib.blake2b(state + i_bytes).digest()
         elif r == 3:
-            state = hashlib.sha3_256(state + str(i).encode()).digest()
+            state = hashlib.sha3_256(state + i_bytes).digest()
         elif r == 4:
-            state = hashlib.sha3_512(state + str(i).encode()).digest()
+            state = hashlib.sha3_512(state + i_bytes).digest()
         else:
-            state = hashlib.blake2s(state + str(i).encode()).digest()
-        acc = (acc * 131 + state[0]) % 1000000
+            state = hashlib.blake2s(state + i_bytes).digest()
+        acc = (acc * 131 + state[0] + i) % 1000000
     return (acc * weight + 17) % 100
 
 
-def engine_prime_modular(mixed_bytes, weight):
+# ENGINE 2: Prime modular
+def engine_prime_modular(data, weight):
     score = 0
     raw = 0
-    for i in range(0, len(mixed_bytes), 2):
-        cb = mixed_bytes[i:i + 4]
+    for i in range(0, len(data), 2):
+        cb = data[i:i + 4]
         if len(cb) < 4:
             cb += b"\x00" * (4 - len(cb))
         ck = int.from_bytes(cb, "big")
@@ -247,73 +266,103 @@ def engine_prime_modular(mixed_bytes, weight):
         try:
             inv = pow(ck % 89 + 1, 87, 89)
             score = (score + inv) % 100
+        except Exception:
+            pass
+        try:
             inv2 = pow(ck % 101 + 1, 99, 101)
             score = (score * inv2 + 7) % 100
+        except Exception:
+            pass
+        try:
             inv3 = pow(ck % 103 + 1, 101, 103)
             score = (score + inv3 * 3) % 100
         except Exception:
             pass
         raw = (raw + ck) % 1000000
 
-    p1 = PRIMES[raw % 2000]
-    p2 = PRIMES[(raw >> 4) % 2000]
-    p3 = PRIMES[(raw >> 8) % 2000]
-    p4 = PRIMES[(raw >> 12) % 2000]
-    p5 = PRIMES[(raw >> 16) % 2000]
+    p1 = PRIMES[raw % N_PRIMES]
+    p2 = PRIMES[(raw >> 4) % N_PRIMES]
+    p3 = PRIMES[(raw >> 8) % N_PRIMES]
+    p4 = PRIMES[(raw >> 12) % N_PRIMES]
+    p5 = PRIMES[(raw >> 16) % N_PRIMES]
     prime_score = (p1 * 7 + p2 * 11 + p3 * 13 + p4 * 17 + p5 * 19) % 100
     score = (score + prime_score) % 100
     return score, raw
 
 
-def engine_chaos_logistic(mixed_bytes, weight):
-    seed = int.from_bytes(mixed_bytes[:8], "big") / float(2 ** 64)
-    x = logistic_map(seed if seed > 0.001 else 0.31415, 3.9999, 32)
-    y = logistic_map(1 - seed if seed < 0.999 else 0.27182, 3.9997, 32)
-    z = logistic_map((seed + 0.5) % 1.0, 3.9993, 24)
+# ENGINE 3: Xorshift128+ (integer PRNG - deterministic)
+def engine_xorshift(data, weight):
+    if len(data) < 16:
+        data = data + b"\x00" * (16 - len(data))
+    s0 = int.from_bytes(data[0:4], "big") or 0x12345678
+    s1 = int.from_bytes(data[4:8], "big") or 0x9ABCDEF0
+    s2 = int.from_bytes(data[8:12], "big") or 0x87654321
+    s3 = int.from_bytes(data[12:16], "big") or 0x0FEDCBA9
 
-    for i in range(64):
-        b = mixed_bytes[i % len(mixed_bytes)]
-        x = logistic_map((x + b / 512.0) % 1.0, 3.9999, 4)
-        y = logistic_map((y + x * 0.5) % 1.0, 3.9997, 4)
+    for i in range(100):
+        t = (s1 << 9) & MASK32
+        s2 ^= s0
+        s3 ^= s1
+        s1 ^= s2
+        s0 ^= s3
+        s2 ^= t
+        s3 = ((s3 << 11) | (s3 >> 21)) & MASK32
+        s0 = (s0 + (i * 0x9E3779B9)) & MASK32
 
-    combined = (x * 0.4 + y * 0.35 + z * 0.25)
-    val = int(combined * 10000) % 100
-    return (val * weight + int(x * 1000)) % 100
-
-
-def engine_henon(mixed_bytes, weight):
-    seed_x = int.from_bytes(mixed_bytes[:8], "big") / float(2 ** 64)
-    seed_y = int.from_bytes(mixed_bytes[8:16], "big") / float(2 ** 64)
-    x = seed_x if 0.01 < seed_x < 0.99 else 0.5
-    y = seed_y if 0.01 < seed_y < 0.99 else 0.5
-
-    for i in range(80):
-        b = mixed_bytes[i % len(mixed_bytes)]
-        x, y = henon_map((x + b / 1000.0) % 1.0, (y + b / 1500.0) % 1.0, 1.4, 0.3, 3)
-
-    combined = (x * 0.6 + y * 0.4)
-    val = int(combined * 10000) % 100
-    return (val * weight + int(y * 777)) % 100
+    result = (s0 ^ s1 ^ s2 ^ s3) & MASK32
+    val = result % 100
+    return (val * weight + (s0 % 97)) % 100
 
 
-def engine_wavelet(mixed_bytes, weight):
-    approx = mixed_bytes
+# ENGINE 4: FNV-1a hash chain
+def engine_fnv_chain(data, weight):
+    FNV_OFFSET = 0xcbf29ce484222325
+    FNV_PRIME = 0x100000001b3
+
+    h1 = FNV_OFFSET
+    for b in data:
+        h1 ^= b
+        h1 = (h1 * FNV_PRIME) & MASK64
+
+    h2 = FNV_OFFSET
+    for i in range(len(data) - 1, -1, -1):
+        h2 ^= data[i]
+        h2 = (h2 * FNV_PRIME) & MASK64
+
+    h3 = FNV_OFFSET ^ ((h1 * 31) & MASK64)
+    for i in range(0, len(data), 2):
+        h3 ^= data[i]
+        h3 = (h3 * FNV_PRIME) & MASK64
+
+    h1 = mix64(h1)
+    h2 = mix64(h2)
+    h3 = mix64(h3)
+
+    combined = (h1 ^ h2 ^ h3) & MASK64
+    val = combined % 100
+    return (val * weight + ((h1 >> 32) % 97)) % 100
+
+
+# ENGINE 5: Wavelet integer
+def engine_wavelet(data, weight):
+    approx = bytes(data)
     detail_sums = []
-    for level in range(4):
+    for level in range(5):
         half = len(approx) // 2
         if half < 2:
             break
-        a_new = b""
+        a_new = bytearray()
         d_sum = 0
         for i in range(half):
             a = approx[2 * i]
             b = approx[2 * i + 1]
-            a_new += bytes([(a + b) // 2])
+            a_new.append((a + b) // 2)
             d_sum = (d_sum * 7 + abs(a - b)) % 1000000
         detail_sums.append(d_sum)
-        approx = a_new
+        approx = bytes(a_new)
 
-    approx_val = int.from_bytes(hashlib.sha256(approx).digest()[:4], "big")
+    approx_hash = hashlib.sha256(approx).digest()
+    approx_val = int.from_bytes(approx_hash[:4], "big")
     score = 0
     for idx, d in enumerate(detail_sums):
         score = (score * 97 + d * (idx + 3)) % 100
@@ -321,40 +370,43 @@ def engine_wavelet(mixed_bytes, weight):
     return (score * weight + sum(detail_sums) % 97) % 100
 
 
-def engine_fourier(mixed_bytes, weight):
-    n = min(len(mixed_bytes), 64)
-    samples = [mixed_bytes[i] for i in range(n)]
+# ENGINE 6: Walsh-Hadamard Transform
+def engine_wht(data, weight):
+    n = min(len(data), 64)
+    samples = [data[i] for i in range(n)]
 
-    magnitudes = []
-    for k in range(1, 9):
-        re_sum = 0.0
-        im_sum = 0.0
-        for t in range(n):
-            angle = 2 * math.pi * k * t / n
-            re_sum += samples[t] * math.cos(angle)
-            im_sum -= samples[t] * math.sin(angle)
-        mag = math.sqrt(re_sum * re_sum + im_sum * im_sum)
-        magnitudes.append(mag)
+    arr = list(samples) + [0] * (64 - n) if n < 64 else list(samples[:64])
 
-    total = sum(magnitudes) or 1.0
-    weighted = 0.0
-    for k, mag in enumerate(magnitudes):
-        weighted += (mag / total) * (k + 1) * 12.5
-    val = int(weighted * 100) % 100
-    return (val * weight + int(max(magnitudes) * 100)) % 100
+    h = 1
+    while h < 64:
+        for i in range(0, 64, h * 2):
+            for j in range(i, i + h):
+                x = arr[j]
+                y = arr[j + h]
+                arr[j] = (x + y) & MASK32
+                arr[j + h] = (x - y) & MASK32
+        h *= 2
+
+    weighted = 0
+    for k in range(64):
+        weighted = (weighted * 3 + (arr[k] & 0xFF) * (k + 1)) % 1000000
+
+    val = weighted % 100
+    return (val * weight + (sum(arr) & 0xFF)) % 100
 
 
-def engine_markov(mixed_bytes, weight):
+# ENGINE 7: Markov chain integer
+def engine_markov(data, weight):
     trans = [[0] * 16 for _ in range(16)]
     nibbles = []
-    for b in mixed_bytes:
+    for b in data:
         nibbles.append((b >> 4) & 0xF)
         nibbles.append(b & 0xF)
 
     for i in range(len(nibbles) - 1):
         trans[nibbles[i]][nibbles[i + 1]] += 1
 
-    entropy = 0.0
+    entropy_x1000 = 0
     total = 0
     for row in trans:
         for v in row:
@@ -363,34 +415,31 @@ def engine_markov(mixed_bytes, weight):
         for row in trans:
             for v in row:
                 if v > 0:
-                    p = v / total
-                    entropy -= p * math.log(p + 1e-12)
-
-    max_ent = math.log(total + 1e-12) if total > 0 else 1.0
-    norm_ent = entropy / (max_ent + 1e-12)
+                    entropy_x1000 += (v * (total - v) * 1000) // (total * total)
 
     sig = 0
     for i in range(16):
         for j in range(16):
             sig = (sig * 3 + trans[i][j]) % 100000
 
-    val = int(norm_ent * 10000) % 100
+    val = entropy_x1000 % 100
     return (val * weight + sig % 100) % 100
 
 
-def engine_cellular_automaton(mixed_bytes, weight):
+# ENGINE 8: Cellular automaton
+def engine_cellular_automaton(data, weight):
     n = 64
     state = []
     for i in range(n):
-        state.append((mixed_bytes[i % len(mixed_bytes)] >> (i % 8)) & 1)
+        state.append((data[i % len(data)] >> (i % 8)) & 1)
 
-    seed_rule = mixed_bytes[0] % 2
+    seed_rule = data[0] % 2
     if seed_rule == 0:
         rule = [0, 1, 1, 1, 1, 0, 0, 0]
     else:
         rule = [0, 1, 1, 0, 1, 1, 1, 0]
 
-    for step in range(60):
+    for step in range(80):
         new_state = [0] * n
         for i in range(n):
             left = state[(i - 1) % n]
@@ -411,113 +460,125 @@ def engine_cellular_automaton(mixed_bytes, weight):
 
 
 # ============================================================
-#   CONSENSUS PREDICTION v14
+#   PREDICT v15 - DETERMINISTIC
 # ============================================================
-def predict(h):
-    h = h.strip()
+def _predict_raw(h):
+    h = h.strip().lower()
     htype = detect_hash_type(h)
     if not htype:
-        return {"error": True}
+        return None
 
-    md5_c = md5_custom(h.encode())
-    sha3_256 = hashlib.sha3_256(h.encode()).hexdigest()
-    sha3_512 = hashlib.sha3_512(h.encode()).hexdigest()
-    blake2b = hashlib.blake2b(h.encode()).hexdigest()
-    blake2s = hashlib.blake2s(h.encode()).hexdigest()
+    h_bytes = h.encode()
+
+    md5_c = md5_custom(h_bytes)
+    sha1 = hashlib.sha1(h_bytes).hexdigest()
+    sha224 = hashlib.sha224(h_bytes).hexdigest()
+    sha256 = hashlib.sha256(h_bytes).hexdigest()
+    sha384 = hashlib.sha384(h_bytes).hexdigest()
+    sha512 = hashlib.sha512(h_bytes).hexdigest()
+    sha3_256 = hashlib.sha3_256(h_bytes).hexdigest()
+    sha3_512 = hashlib.sha3_512(h_bytes).hexdigest()
+    blake2b = hashlib.blake2b(h_bytes).hexdigest()
+    blake2s = hashlib.blake2s(h_bytes).hexdigest()
+
     weight = 47 if htype == "MD5" else 59
 
-    salt1 = "LM14_A"
-    salt2 = "SEED_" + str(len(h)) + "_" + str(weight)
-    salt3 = "X9K2M7P4Q1"
-    salt4 = "R_" + md5_c[:14]
-    salt5 = "ZK3L8N5W2Y7"
-    salt6 = SECRET_SALT
-    salt7 = "OMEGA_" + sha3_256[:10]
-    salt8 = "FINAL_" + blake2s[:12]
-    salt9 = "V14_" + htype
-    salt10 = "ULTRA_" + sha3_512[:16]
+    parts = [
+        h, SECRET_TOKEN, SECRET_SALT, md5_c,
+        sha1, sha224, sha256, sha384, sha512,
+        sha3_256, sha3_512, blake2b, blake2s,
+        htype, str(len(h)), str(weight)
+    ]
+    mixed = "::".join(parts).encode()
 
-    mixed = (
-        h + "::" + SECRET_TOKEN + "::" + md5_c + "::" + sha3_256 +
-        "::" + sha3_512 + "::" + blake2b + "::" + blake2s +
-        "::" + salt1 + "::" + salt2 + "::" + salt3 + "::" + salt4 +
-        "::" + salt5 + "::" + salt6 + "::" + salt7 + "::" + salt8 +
-        "::" + salt9 + "::" + salt10
-    ).encode()
-
+    # Avalanche
     avalanche_configs = [
         (13, 0xA5A5A5A5A5A5A5A5), (7, 0x5A5A5A5A5A5A5A5A),
         (11, 0x3C3C3C3C3C3C3C3C), (17, 0xC3C3C3C3C3C3C3C3),
         (19, 0xFFFF0000FFFF0000), (23, 0x0F0F0F0F0F0F0F0F),
         (29, 0xF0F0F0F0F0F0F0F0), (31, 0x1234567890ABCDEF),
+        (37, 0xDEADBEEFCAFEBABE), (41, 0x13579BDF2468ACE0),
     ]
     for shift, mask in avalanche_configs:
         b = int.from_bytes(mixed[:8], "big")
-        b = ((b << shift) | (b >> (64 - shift))) & 0xFFFFFFFFFFFFFFFF
+        b = rotl64(b, shift)
         b ^= mask
         mixed = b.to_bytes(8, "big") + mixed[8:]
 
+    # 8 engines
     e1 = engine_hash_cascade(mixed, weight)
     e2, raw_score = engine_prime_modular(mixed, weight)
-    e3 = engine_chaos_logistic(mixed, weight)
-    e4 = engine_henon(mixed, weight)
+    e3 = engine_xorshift(mixed, weight)
+    e4 = engine_fnv_chain(mixed, weight)
     e5 = engine_wavelet(mixed, weight)
-    e6 = engine_fourier(mixed, weight)
+    e6 = engine_wht(mixed, weight)
     e7 = engine_markov(mixed, weight)
     e8 = engine_cellular_automaton(mixed, weight)
 
-    fib_val = fibonacci_mod(raw_score % 300, 100)
-    sqrt_val = int(math.sqrt(raw_score + 1) * 100) % 100
-    sin_val = int(abs(math.sin(raw_score / 1000.0)) * 1000) % 100
-    cos_val = int(abs(math.cos(raw_score / 1000.0)) * 1000) % 100
-
     engines = [e1, e2, e3, e4, e5, e6, e7, e8]
+
+    # Weighted average (integer scaled x100)
+    engine_weights = [115, 130, 120, 110, 105, 100, 110, 105]
+    total_w = sum(engine_weights)
+    weighted_sum = sum(engines[i] * engine_weights[i] for i in range(8))
+    avg_scaled = (weighted_sum * 100) // total_w
+    avg_score = avg_scaled // 100
+
+    # Consensus
     tai_votes = sum(1 for x in engines if x >= 50)
-    xiu_votes = len(engines) - tai_votes
+    xiu_votes = 8 - tai_votes
 
-    engine_weights = [1.15, 1.30, 1.20, 1.10, 1.05, 1.00, 1.10, 1.05]
+    if tai_votes >= 6:
+        avg_score = min(97, avg_score + 8)
+    elif tai_votes <= 2:
+        avg_score = max(3, avg_score - 8)
 
-    weighted_tai = 0.0
-    total_w = 0.0
-    for i, e in enumerate(engines):
-        w = engine_weights[i]
-        total_w += w
-        weighted_tai += e * w
+    # Secondary factors
+    a, b = 0, 1
+    for _ in range(raw_score % 300):
+        a, b = b, (a + b) % 100
+    fib_val = a
 
-    avg_score = weighted_tai / total_w
+    sqrt_val = isqrt(raw_score + 1) % 100
 
-    consensus_ratio = tai_votes / len(engines)
-    if consensus_ratio >= 0.75:
-        if avg_score >= 50:
-            avg_score = min(95, avg_score + 6)
-        else:
-            avg_score = max(5, avg_score - 6)
-    elif consensus_ratio <= 0.25:
-        if avg_score < 50:
-            avg_score = max(5, avg_score - 5)
-        else:
-            avg_score = min(95, avg_score + 5)
+    x_mod = raw_score % 628
+    sin_approx = ((x_mod * (628 - x_mod)) // 100) % 100
 
-    secondary = (fib_val + sqrt_val + sin_val + cos_val) / 4.0
-    avg_score = (avg_score * 0.82) + (secondary * 0.18)
+    secondary = (fib_val + sqrt_val + sin_approx) // 3
+    avg_score = (avg_score * 82 + secondary * 18) // 100
 
-    final = int(avg_score) % 100
-    sb = final & 0x7F
-    final = ((sb << 1) | (sb >> 6)) & 0x7F
+    # Final nonlinear transform
+    final = avg_score & 0x7F
+    final = ((final << 1) | (final >> 6)) & 0x7F
     final = (final + weight * 7) % 100
     final = (final * 131 + 17) % 100
+    final = (final ^ 0x5A) % 100
     final = abs(final) % 100
 
-    variance = sum((e - avg_score) ** 2 for e in engines) / len(engines)
-    std_dev = math.sqrt(variance)
+    # Loại bỏ "CHƯA RÕ" - luôn ra TÀI/XỈU
+    if 45 <= final <= 55:
+        if tai_votes > xiu_votes:
+            final = 56 + (final % 5)
+        elif xiu_votes > tai_votes:
+            final = 44 - (final % 5)
+        else:
+            # Hòa → tie-break bằng hash byte
+            tie_break = mixed[0] % 2
+            final = 43 if tie_break == 0 else 57
 
-    agreement = max(tai_votes, xiu_votes) / len(engines)
-    base_conf = 55 + int(agreement * 30)
-    if std_dev < 10:
+    final = max(5, min(95, final))
+
+    # Confidence
+    variance = sum((e - avg_score) ** 2 for e in engines) // 8
+    std_int = isqrt(variance)
+
+    agreement = max(tai_votes, xiu_votes)
+    base_conf = 55 + (agreement * 30) // 8
+    if std_int < 10:
         base_conf += 10
-    elif std_dev < 20:
+    elif std_int < 20:
         base_conf += 5
-    elif std_dev > 35:
+    elif std_int > 35:
         base_conf -= 10
 
     distance = abs(final - 50)
@@ -526,12 +587,9 @@ def predict(h):
     elif distance < 8:
         base_conf -= 5
 
-    confidence = max(50, min(int(base_conf), 97))
+    confidence = max(50, min(base_conf, 97))
 
-    if 46 <= final <= 54 and confidence < 60:
-        result = "CHƯA RÕ"
-    else:
-        result = "XỈU" if final < 50 else "TÀI"
+    result = "XỈU" if final < 50 else "TÀI"
 
     return {
         "hash": h,
@@ -542,12 +600,37 @@ def predict(h):
         "confidence": confidence,
         "engines": engines,
         "votes": (tai_votes, xiu_votes),
-        "std": round(std_dev, 1),
+        "std": std_int,
     }
 
 
+def predict(h):
+    """Wrapper có CACHE - cùng hash luôn trả cùng kết quả"""
+    h_clean = h.strip().lower()
+    if not detect_hash_type(h_clean):
+        return {"error": True}
+
+    cache = load_db(CACHE_FILE)
+    if h_clean in cache:
+        return cache[h_clean]
+
+    res = _predict_raw(h_clean)
+    if not res:
+        return {"error": True}
+
+    cache[h_clean] = res
+    if len(cache) > 50000:
+        keys = list(cache.keys())[:5000 ]
+        for k in keys:
+            del cache[k]
+    save_db(CACHE60
+   _FILE, if cache)
+
+    return res
+
+
 def esc(t):
-    return html.escape(str(t))
+ d    return html.escape(str(t))
 
 
 # ============================================================
@@ -596,24 +679,15 @@ def activate_key(user_id, key):
 
     if info["seconds"] == -1:
         users[uid] = {
-            "key": key,
-            "type": info["type"],
-            "label": info["label"],
-            "activated": now,
-            "expires": -1,
+            "key": key, "type": info["type"], "label": info["label"],
+            "activated": now, "expires": -1,
         }
     else:
         existing = users.get(uid, {})
-        if existing and existing.get("expires", 0) > now:
-            base = existing["expires"]
-        else:
-            base = now
+        base = existing["expires"] if existing and existing.get("expires", 0) > now else now
         users[uid] = {
-            "key": key,
-            "type": info["type"],
-            "label": info["label"],
-            "activated": now,
-            "expires": base + info["seconds"],
+            "key": key, "type": info["type"], "label": info["label"],
+            "activated": now, "expires": base + info["seconds"],
         }
     save_db(DB_FILE, users)
     return True, info
@@ -641,8 +715,7 @@ def get_remaining(expires):
     d = remain // 86400
     h = (remain % 86400) // 3600
     m = (remain % 3600) // 60
-    s = remain % 60
-    if d > 0:
+    s = remain % > 0:
         return str(d) + " ngày " + str(h) + " giờ"
     if h > 0:
         return str(h) + " giờ " + str(m) + " phút"
@@ -718,12 +791,11 @@ def rate_limit_ok(user_id):
 
 
 # ============================================================
-#   MESSAGES KHOÁ
+#   MESSAGES
 # ============================================================
 async def send_locked_message(update_or_msg):
     text = (
-        "🔒 <b>KEY ĐÃ HẾT HẠN</b>\n"
-        + LINE + "\n\n"
+        "🔒 <b>KEY ĐÃ HẾT HẠN</b>\n" + LINE + "\n\n"
         "⚠️ Thời gian sử dụng đã kết thúc!\n\n"
         "📋 Để tiếp tục:\n"
         "1️⃣ Gõ /nap xem bảng giá\n"
@@ -751,8 +823,7 @@ async def send_locked_message(update_or_msg):
 
 async def send_no_key_message(update_or_msg):
     text = (
-        "🔒 <b>CHƯA KÍCH HOẠT KEY</b>\n"
-        + LINE + "\n\n"
+        "🔒 <b>CHƯA KÍCH HOẠT KEY</b>\n" + LINE + "\n\n"
         "⚠️ Cần có key VIP để sử dụng!\n\n"
         "📋 Các bước:\n"
         "1️⃣ Gõ /nap xem bảng giá\n"
@@ -818,11 +889,12 @@ async def start(update, ctx):
         status = "❌ Chưa kích hoạt"
 
     text = (
-        "🎯 <b>LEMINH TOOL VIP v14</b>\n"
-        "🧠 Multi-Engine AI Prediction\n"
+        "🎯 <b>LEMINH TOOL VIP v15</b>\n"
+        "🔒 Deterministic Algorithm\n"
         + LINE + "\n\n"
         "📥 <b>Gửi MD5 (32) / SHA-256 (64)</b>\n"
-        "→ Bot tự nhận diện + dự đoán\n\n"
+        "→ Bot tự nhận diện + dự đoán\n"
+        "→ Cùng hash luôn ra cùng kết quả\n\n"
         + LINE + "\n"
         "🔑 <b>Trạng thái:</b> " + status + "\n"
         + LINE + "\n"
@@ -841,8 +913,7 @@ async def cmd_key(update, ctx):
     args = ctx.args
     if not args:
         text = (
-            "🔑 <b>KÍCH HOẠT KEY</b>\n"
-            + LINE + "\n\n"
+            "🔑 <b>KÍCH HOẠT KEY</b>\n" + LINE + "\n\n"
             "📝 Cú pháp:\n"
             "<code>/key MÃ_KEY</code>\n\n"
             "💡 Ví dụ:\n"
@@ -857,8 +928,7 @@ async def cmd_key(update, ctx):
 
     if ok:
         text = (
-            "✅ <b>KÍCH HOẠT THÀNH CÔNG!</b>\n"
-            + LINE + "\n"
+            "✅ <b>KÍCH HOẠT THÀNH CÔNG!</b>\n" + LINE + "\n"
             "🔑 Key: <code>" + esc(key) + "</code>\n"
             "🎁 Loại: <b>" + result["label"] + "</b>\n"
             + LINE + "\n"
@@ -872,8 +942,7 @@ async def cmd_key(update, ctx):
 
 async def cmd_nap(update, ctx):
     text = (
-        "💳 <b>NẠP TIỀN MUA KEY</b>\n"
-        + LINE + "\n"
+        "💳 <b>NẠP TIỀN MUA KEY</b>\n" + LINE + "\n"
         "🏦 Ngân hàng: <b>" + BANK_NAME + "</b>\n"
         "💳 Số TK: <code>" + BANK_ACC + "</code>\n"
         "👤 Chủ TK: <b>" + BANK_OWNER + "</b>\n"
@@ -1105,7 +1174,7 @@ async def handle_hash(update, ctx):
     )
 
     msg = (
-        "🎯 <b>LEMINH TOOL</b>\n"
+        "🎯 <b>HOANG MINH TOOL</b>\n"
         + LINE + "\n"
         + "🔎 <code>" + esc(res["hash"]) + "</code>\n"
         + "🧩 " + res["type"] + "\n\n"
@@ -1135,6 +1204,7 @@ async def cmd_admin(update, ctx):
     keys = load_db(KEYS_FILE)
     bans = load_db(BANS_FILE)
     stats = load_db(STATS_FILE)
+    cache = load_db(CACHE_FILE)
     now = time.time()
 
     total_users = len(users)
@@ -1146,7 +1216,7 @@ async def cmd_admin(update, ctx):
     total_preds = stats.get("global_total", 0)
 
     text = (
-        "👑 <b>ADMIN PANEL </b>\n" + LINE + "\n"
+        "👑 <b>ADMIN PANEL v15</b>\n" + LINE + "\n"
         "👥 Tổng user: <b>" + str(total_users) + "</b>\n"
         "✅ VIP hoạt động: <b>" + str(active_users) + "</b>\n"
         "🔴 Đã hết hạn: <b>" + str(expired_users) + "</b>\n"
@@ -1155,6 +1225,7 @@ async def cmd_admin(update, ctx):
         "✔️ Đã dùng: <b>" + str(used_keys) + "</b>\n"
         "🆓 Chưa dùng: <b>" + str(unused_keys) + "</b>\n"
         "🎯 Tổng dự đoán: <b>" + str(total_preds) + "</b>\n"
+        "💾 Cache: <b>" + str(len(cache)) + "</b> hash\n"
         + LINE + "\n"
         "📋 <b>LỆNH ADMIN:</b>\n"
         "├ /users - Danh sách user\n"
@@ -1166,6 +1237,7 @@ async def cmd_admin(update, ctx):
         "├ /ban ID - Khoá user\n"
         "├ /unban ID - Mở khoá\n"
         "├ /bans - Danh sách ban\n"
+        "├ /clearcache - Xoá cache\n"
         "├ /thongkeuser ID - Xem stats\n"
         "└ /broadcast Nội dung - Gửi all"
     )
@@ -1311,16 +1383,16 @@ async def cmd_giahan(update, ctx):
     )
 
 
-async def cmd_resetkey(update, ctx):
-    user = update.effective_user
-    if not is_admin(user.id):
-        await update.message.reply_text("❌ Bạn không phải admin!")
+async def [ cmd_resetkey(update, ctx):
+ID    user = update.eff]ective_user
+    if not is_admin(user")
+.id):
+        await update.message.reply_text        return("❌ Bạn không phải admin!")
         return
 
     args = ctx.args
     if not args:
-        await update.message.reply_text("📝 /resetkey [ID]")
-        return
+        await update.message.reply_text("📝 /resetkey
 
     target_id = args[0].strip()
     users = load_db(DB_FILE)
@@ -1462,6 +1534,23 @@ async def cmd_bans(update, ctx):
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
+async def cmd_clearcache(update, ctx):
+    user = update.effective_user
+    if not is_admin(user.id):
+        await update.message.reply_text("❌ Bạn không phải admin!")
+        return
+
+    cache = load_db(CACHE_FILE)
+    count = len(cache)
+    save_db(CACHE_FILE, {})
+    await update.message.reply_text(
+        "✅ <b>ĐÃ XOÁ CACHE</b>\n"
+        "🗑️ Xoá " + str(count) + " entries\n\n"
+        "⚠️ Lần sau dự đoán hash cũ sẽ tính lại.",
+        parse_mode=ParseMode.HTML
+    )
+
+
 async def cmd_thongkeuser(update, ctx):
     user = update.effective_user
     if not is_admin(user.id):
@@ -1597,14 +1686,8 @@ async def post_init(app):
     except Exception as e:
         logger.error("set_my_commands: " + str(e))
 
-    try:
-        await app.bot.delete_webhook(drop_pending_updates=True)
-        logger.info("Delete webhook OK")
-    except Exception as e:
-        logger.warning("delete_webhook: " + str(e))
-
     logger.info("DATA_DIR: " + DATA_DIR)
-    logger.info("Bot v14 ULTIMATE started!")
+    logger.info("Bot v15 DETERMINISTIC started! (POLLING MODE)")
 
 
 # ============================================================
@@ -1614,7 +1697,6 @@ def main():
     if not BOT_TOKEN:
         raise SystemExit("Chua co BOT_TOKEN!")
 
-    # Fix asyncio event loop cho Python 3.10+
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -1628,7 +1710,7 @@ def main():
         .build()
     )
 
-    # USER
+    # USER HANDLERS
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("key", cmd_key))
     app.add_handler(CommandHandler("nap", cmd_nap))
@@ -1640,7 +1722,7 @@ def main():
     app.add_handler(CommandHandler("64kitu", cmd_64))
     app.add_handler(CommandHandler("myid", cmd_myid))
 
-    # ADMIN
+    # ADMIN HANDLERS
     app.add_handler(CommandHandler("admin", cmd_admin))
     app.add_handler(CommandHandler("capkey", cmd_capkey))
     app.add_handler(CommandHandler("users", cmd_users))
@@ -1651,31 +1733,19 @@ def main():
     app.add_handler(CommandHandler("ban", cmd_ban))
     app.add_handler(CommandHandler("unban", cmd_unban))
     app.add_handler(CommandHandler("bans", cmd_bans))
-    app.add_handler(CommandHandler("thongkeuser", cmd_thongkeuser))
-    app.add_handler(CommandHandler("broadcast", cmd_broadcast))
+    app.add_handler(CommandHandler("clearcache", cmd_clearcacheông))
+    app.add_handler(CommandHandler("th cóongkeuser", cmd_thongke |user))
+    app.add_handler(CommandHandler ✅("broadcast", cmd_broadcast))
 
-    # CALLBACK + MESSAGE
+ C    # CALLBACK + MESSAGE
     app.add_handler(CallbackQueryHandler(button_cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_hash))
 
     # ERROR
     app.add_error_handler(error_handler)
 
-    if not RENDER_URL:
-        logger.warning("⚠️ RENDER_EXTERNAL_URL chưa set → dùng polling local")
-        app.run_polling(drop_pending_updates=True)
-        return
-
-    webhook_url = RENDER_URL + "/" + BOT_TOKEN
-    logger.info("Webhook: " + webhook_url)
-
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=BOT_TOKEN,
-        webhook_url=webhook_url,
-        drop_pending_updates=True,
-    )
+    logger.info("Starting polling...")
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
